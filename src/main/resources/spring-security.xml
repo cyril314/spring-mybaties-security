@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<b:beans xmlns="http://www.springframework.org/schema/security"
+         xmlns:b="http://www.springframework.org/schema/beans"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.springframework.org/schema/beans
+             http://www.springframework.org/schema/beans/spring-beans.xsd
+             http://www.springframework.org/schema/security
+             http://www.springframework.org/schema/security/spring-security.xsd">
+
+    <b:description>SpringSecurity安全配置</b:description>
+    <!--<debug/>-->
+    <!-- 静态资源，不用权限 -->
+    <http pattern="/" security="none"/>
+    <http pattern="/index*" security="none"/>
+    <http pattern="/login*" security="none"/>
+    <http pattern="/static/**" security="none"/>
+    <http pattern="/*.ico" security="none"/>
+    <http pattern="${security.deniedPageUrl}" security="none"/>
+
+    <!-- auto-config = true 则使用from-login. 如果不使用该属性 则默认为http-basic(没有session).-->
+    <!-- use-expressions:Spring 表达式语言配置访问控制 -->
+    <!-- lowercase-comparisons：表示URL比较前先转为小写。-->
+    <!-- path-type：表示使用Apache Ant的匹配模式。-->
+    <!-- access-denied-page：访问拒绝时转向的页面。-->
+    <!-- access-decision-manager-ref：指定了自定义的访问策略管理器。-->
+    <http use-expressions="true" entry-point-ref="loginUrlEntryPoint">
+        <!-- 单用户登陆 -->
+        <session-management>
+            <concurrency-control max-sessions="1" error-if-maximum-exceeded="true"/>
+        </session-management>
+        <!-- 尝试访问没有权限的页面时跳转的页面 -->
+        <access-denied-handler error-page="/denied"/>
+
+        <custom-filter ref="loginFilter" position="FORM_LOGIN_FILTER"/>
+
+        <custom-filter ref="authFilter" before="FILTER_SECURITY_INTERCEPTOR"/>
+
+        <!-- 检测失效的sessionId,session超时时，定位到另外一个URL -->
+        <session-management invalid-session-url="/login"/>
+        <!-- 退出过滤器 -->
+        <custom-filter position="LOGOUT_FILTER" ref="logoutFilter"/>
+    </http>
+
+    <!-- 登录验证器 -->
+    <b:bean id="loginFilter" class="com.security.filter.FilterLoginAuthentication">
+        <b:property name="filterProcessesUrl" value="/login_check"/>
+        <!-- 验证成功后的处理  -->
+        <b:property name="authenticationSuccessHandler" ref="authenticationSuccessHandler"/>
+        <!-- 验证失败后的处理  -->
+        <b:property name="authenticationFailureHandler" ref="authenticationFailureHandler"/>
+
+        <b:property name="authenticationManager" ref="authenticationManager"/>
+    </b:bean>
+    <!-- 自定义登录成功handler -->
+    <b:bean id="authenticationSuccessHandler" class="com.security.core.SecurityLoginSuccessHandler">
+        <!-- 默认登录成功跳转页面 -->
+        <b:constructor-arg name="defaultTargetUrl" value="${security.defaultUrl}"/>
+        <!-- 可以配置相应的跳转方式。属性forwardToDestination为true采用forward false为sendRedirect -->
+        <b:property name="forwardToDestination" value="false"/>
+        <!-- 其它登录 -->
+        <b:property name="directUrlResolvers">
+            <b:list>
+                <!-- 后台登录成功 -->
+                <b:ref bean="adminAuthenticationSuccessUrlResolver"/>
+            </b:list>
+        </b:property>
+    </b:bean>
+    <!-- 自定义登录失败handler -->
+    <b:bean id="authenticationFailureHandler" class="com.security.core.SecurityLoginFailureHandler">
+        <!-- 默认登录失败跳转页面 -->
+        <b:constructor-arg name="defaultFailureUrl" value="${security.defaultLogin}?type=error"/>
+        <!-- 用来在日志中保存用户登录信息 -->
+        <b:property name="usernameParameter" value="username"/>
+        <!-- 其它登录 -->
+        <b:property name="directUrlResolvers">
+            <b:list>
+                <!-- 后台登录失败 -->
+                <b:ref bean="adminAuthenticationFailureUrlResolver"/>
+            </b:list>
+        </b:property>
+    </b:bean>
+
+    <!-- 认证过滤器 -->
+    <b:bean id="authFilter" class="com.security.filter.FilterSecurityInterceptor">
+        <b:property name="authenticationManager" ref="authenticationManager"/>
+        <b:property name="accessDecisionManager" ref="accessDecisionManager"/>
+        <b:property name="securityMetadataSource" ref="securityMetadataSource"/>
+    </b:bean>
+
+    <!-- 认证管理器 -->
+    <authentication-manager alias="authenticationManager">
+        <authentication-provider user-service-ref="userDetailServices">
+            <!--<password-encoder ref="passwordEncoder">
+                <salt-source user-property="username"/>
+            </password-encoder> -->
+        </authentication-provider>
+    </authentication-manager>
+    <b:bean id="passwordEncoder" class="com.security.utils.PwdEncoder"/>
+    <!-- 自定义用户信息服务认证 -->
+    <b:bean id="userDetailServices" class="com.security.service.UserDetailServices"/>
+
+    <!-- 自定义资源权限关系认证 -->
+    <b:bean id="accessDecisionManager" class="com.security.core.DefaultAccessDecisionManager"/>
+
+    <!-- 自定义资源权限关系集合  -->
+    <b:bean id="securityMetadataSource" class="com.security.core.DefaultSecurityMetadataSource">
+        <b:constructor-arg ref="dataSource"/>
+    </b:bean>
+
+    <!-- 退出过滤器，完成前台用户注销时的定向功能 -->
+    <b:bean id="logoutFilter" class="org.springframework.security.web.authentication.logout.LogoutFilter">
+        <b:constructor-arg ref="logoutSuccessHandler"/>
+        <b:constructor-arg>
+            <b:list>
+                <b:bean class="org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler"/>
+            </b:list>
+        </b:constructor-arg>
+        <b:property name="filterProcessesUrl" value="${security.logoutUrl}"/>
+    </b:bean>
+    <!-- 退出成功handler -->
+    <b:bean id="logoutSuccessHandler" class="com.security.core.SecurityLogoutSuccessHandler">
+        <!-- 默认登录失败跳转页面 -->
+        <b:constructor-arg name="defaultTargetUrl" value="${security.defaultLogin}?type=logout"/>
+        <b:property name="resolvers">
+            <b:list>
+                <b:ref bean="adminLogoutSuccessUrlResolver"/>
+            </b:list>
+        </b:property>
+    </b:bean>
+
+    <!-- 认证切入点，这里使用它的目的是保证当用户登录之前就访问前后台时，会跳转到不同的登录页面 -->
+    <b:bean id="loginUrlEntryPoint" class="com.security.core.DefaultLoginUrlEntryPoint">
+        <!-- spring security4 采用以下方式。默认登录路径 -->
+        <b:constructor-arg value="${security.defaultLogin}"/>
+        <!-- 其它登录路径 -->
+        <b:property name="directUrlResolvers">
+            <b:list>
+                <!-- 后台登录路径 -->
+                <b:ref bean="login4admin"/>
+            </b:list>
+        </b:property>
+    </b:bean>
+
+    <!-- ============================================= <后台管理>分割线 ============================================= -->
+
+    <!-- 后台入口 -->
+    <b:bean id="login4admin" class="com.security.admin.AdminDirectUrlResolver">
+        <b:property name="pattern" value="${security.adminUrlResolverPattern}"/>
+        <b:property name="directUrl" value="${security.adminLoginUrl}"/>
+    </b:bean>
+
+    <!-- 后台登录成功 -->
+    <b:bean id="adminAuthenticationSuccessUrlResolver" class="com.security.admin.AdminDirectUrlResolver">
+        <b:property name="pattern" value="admin"/>
+        <b:property name="directUrl" value="${security.adminDefaultUrl}"/>
+    </b:bean>
+
+    <!-- 后台登录失败 -->
+    <b:bean id="adminAuthenticationFailureUrlResolver" class="com.security.admin.AdminDirectUrlResolver">
+        <b:property name="pattern" value="admin"/>
+        <b:property name="directUrl" value="${security.adminLoginUrl}?type=error"/>
+    </b:bean>
+
+    <!-- 后台退出成功 -->
+    <b:bean id="adminLogoutSuccessUrlResolver" class="com.security.admin.AdminSecurityLogoutSuccessUrlResolver">
+        <b:property name="url" value="${security.adminLoginUrl}?type=logout"/>
+    </b:bean>
+</b:beans>
